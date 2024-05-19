@@ -74,3 +74,65 @@ def test_update_dynamic_table(api_client):
         assert ("field2",) in columns
         assert ("field3",) in columns
         assert ("field4",) in columns
+
+
+@pytest.mark.django_db
+def test_add_row(api_client):
+    create_url = reverse("create-table")
+    create_data = {
+        "name": "DynamicTable3",
+        "fields": [
+            {"name": "field1", "type": "string"},
+            {"name": "field2", "type": "number"},
+            {"name": "field3", "type": "boolean"},
+        ],
+    }
+    create_response = api_client.post(create_url, create_data, format="json")
+    assert create_response.status_code == 201
+    create_response_data = create_response.json()
+    table_id = create_response_data["table_id"]
+
+    add_row_url = reverse("add-row", kwargs={"id": table_id})
+    row_data = {"field1": "Test String", "field2": 123, "field3": True}
+    add_row_response = api_client.post(add_row_url, row_data, format="json")
+    print(add_row_response.json())
+    assert add_row_response.status_code == 201
+    assert add_row_response.json()["message"] == "Row added successfully"
+
+    # Verify the row is added to the database
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT * FROM app_{table_id}")
+        rows = cursor.fetchall()
+        assert len(rows) == 1
+        assert rows[0][1:] == ("Test String", 123, True)
+
+
+@pytest.mark.django_db
+def test_get_rows(api_client):
+    create_url = reverse("create-table")
+    create_data = {
+        "name": "DynamicTable4",
+        "fields": [
+            {"name": "field1", "type": "string"},
+            {"name": "field2", "type": "number"},
+            {"name": "field3", "type": "boolean"},
+        ],
+    }
+    create_response = api_client.post(create_url, create_data, format="json")
+    assert create_response.status_code == 201
+    create_response_data = create_response.json()
+    table_id = create_response_data["table_id"]
+
+    add_row_url = reverse("add-row", kwargs={"id": table_id})
+    row_data = {"field1": "Test String", "field2": 123, "field3": True}
+    add_row_response = api_client.post(add_row_url, row_data, format="json")
+    assert add_row_response.status_code == 201
+
+    get_rows_url = reverse("get-rows", kwargs={"id": table_id})
+    get_rows_response = api_client.get(get_rows_url)
+    assert get_rows_response.status_code == 200
+    rows_data = get_rows_response.json()
+    assert len(rows_data) == 1
+    assert rows_data[0]["field1"] == "Test String"
+    assert rows_data[0]["field2"] == 123
+    assert rows_data[0]["field3"] is True
