@@ -179,7 +179,7 @@ class DynamicTableRowsView(APIView):
 
             # Pobierz nazwy kolumn
             cursor.execute(
-                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"
+                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}' ORDER BY ordinal_position"
             )
             columns = [col[0] for col in cursor.fetchall()]
 

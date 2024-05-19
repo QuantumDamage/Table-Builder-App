@@ -133,6 +133,7 @@ def test_get_rows(api_client):
     assert get_rows_response.status_code == 200
     rows_data = get_rows_response.json()
     assert len(rows_data) == 1
+    print(f"rows_data: {rows_data}")
     assert rows_data[0]["field1"] == "Test String"
     assert rows_data[0]["field2"] == 123
     assert rows_data[0]["field3"] is True
