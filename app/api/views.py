@@ -18,18 +18,18 @@ class CreateTableView(APIView):
                 {"error": "Invalid input"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Tworzenie dynamicznego modelu
+        # Create dynamic model
         attrs = {"__module__": "app.models"}
         for field in fields:
             field_name = field["name"]
             field_type = field["type"]
 
             if field_type == "string":
-                field_instance = models.CharField(max_length=255)
+                field_instance = models.CharField(max_length=255, null=True, blank=True)
             elif field_type == "number":
-                field_instance = models.IntegerField()
+                field_instance = models.IntegerField(null=True, blank=True)
             elif field_type == "boolean":
-                field_instance = models.BooleanField()
+                field_instance = models.BooleanField(null=True, blank=True)
             else:
                 return JsonResponse(
                     {"error": "Invalid field type"}, status=status.HTTP_400_BAD_REQUEST
@@ -40,7 +40,7 @@ class CreateTableView(APIView):
         table_name = table_name.lower()  # Ensure the table name is in lowercase
         DynamicTable = type(table_name, (models.Model,), attrs)
 
-        # Rejestracja modelu w aplikacji
+        # Register model in the application
         try:
             with connection.schema_editor() as schema_editor:
                 schema_editor.create_model(DynamicTable)
@@ -134,11 +134,11 @@ class AddRowView(APIView):
                 if column_name == "id":
                     field = models.AutoField(primary_key=True)
                 elif data_type == "character varying":
-                    field = models.CharField(max_length=255)
+                    field = models.CharField(max_length=255, null=True, blank=True)
                 elif data_type in ["integer", "bigint"]:
-                    field = models.IntegerField()
+                    field = models.IntegerField(null=True, blank=True)
                 elif data_type == "boolean":
-                    field = models.BooleanField()
+                    field = models.BooleanField(null=True, blank=True)
                 else:
                     return JsonResponse(
                         {"error": f"Unsupported column type: {data_type}"}, status=400
@@ -147,6 +147,23 @@ class AddRowView(APIView):
                     DynamicModel.add_to_class(column_name, field)
 
         # Validate and save the data
+        for field_name, field_value in data.items():
+            column_type = next((column[1] for column in columns if column[0] == field_name), None)
+            if column_type == "integer" and not isinstance(field_value, int):
+                return JsonResponse(
+                    {"error": f"Invalid data type for field '{field_name}': expected integer"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if column_type == "character varying" and not isinstance(field_value, str):
+                return JsonResponse(
+                    {"error": f"Invalid data type for field '{field_name}': expected string"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if column_type == "boolean" and not isinstance(field_value, bool):
+                return JsonResponse(
+                    {"error": f"Invalid data type for field '{field_name}': expected boolean"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         try:
             with transaction.atomic():
                 instance = DynamicModel(**data)
@@ -160,11 +177,11 @@ class AddRowView(APIView):
 
 class DynamicTableRowsView(APIView):
     def get(self, request, id):
-        # Ustal dynamiczny model na podstawie id tabeli
+        # Determine the dynamic model based on the table id
         table_name = f"app_{id}"
 
         with connection.cursor() as cursor:
-            # Sprawdź, czy tabela istnieje
+            # Check if the table exists
             cursor.execute(
                 f"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='{table_name}'"
             )
@@ -173,17 +190,17 @@ class DynamicTableRowsView(APIView):
                     {"error": "Table not found"}, status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Pobierz wszystkie wiersze z tabeli
+            # Fetch all rows from the table
             cursor.execute(f"SELECT * FROM {table_name}")
             rows = cursor.fetchall()
 
-            # Pobierz nazwy kolumn
+            # Fetch column names
             cursor.execute(
                 f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}' ORDER BY ordinal_position"
             )
             columns = [col[0] for col in cursor.fetchall()]
 
-        # Przekształć wiersze na listę słowników
+        # Convert rows to a list of dictionaries
         results = [dict(zip(columns, row)) for row in rows]
 
         return JsonResponse(results, safe=False)
