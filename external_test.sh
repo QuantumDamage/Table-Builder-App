@@ -2,8 +2,10 @@
 
 # Stałe konfiguracyjne
 API_BASE_URL="http://localhost:8000/api"
-FIELDS='[{"name": "field1", "type": "string"},{"name": "field2", "type": "number"},{"name": "field3", "type": "boolean"}]'
-ROW_DATA='{"field1": "Test String", "field2": 123, "field3": true}'
+FIELDS='[{"name": "field1", "type": "string"},{"name": "field2", "type": "number"}]'
+NEW_FIELD='[{"name": "field3", "type": "boolean"}]'
+ROW_DATA='{"field1": "Test String", "field2": 123}'
+NEW_ROW_DATA='{"field1": "New String", "field2": 456, "field3": true}'
 
 # Losowa nazwa tabeli
 TABLE_NAME="DynamicTable_$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 10 | head -n 1)"
@@ -35,21 +37,46 @@ else
     exit 1
 fi
 
-# Krok 3: Pobieranie wszystkich wierszy z tabeli
-echo "Krok 3: Pobieranie wszystkich wierszy z tabeli dynamicznej"
+# Krok 2a: Pobieranie wszystkich wierszy z tabeli
+echo "Krok 2a: Pobieranie wszystkich wierszy z tabeli dynamicznej"
 get_rows_response=$(curl -s -X GET "$API_BASE_URL/table/$table_id/rows")
+rows_data=$(echo "$get_rows_response" | jq '.')
 
-# Sprawdzenie, czy pobrane dane zgadzają się z wysłanymi
-response_body=$(echo "$get_rows_response" | jq -c)
-expected_row=$(echo "$ROW_DATA" | jq -c)
-actual_row=$(echo "$response_body" | jq -c '.[0] | {field1, field2, field3}')
+# Wyświetlanie wierszy tabeli
+echo "Wiersze w tabeli dynamicznej:"
+echo "$rows_data"
 
-if [[ "$expected_row" == "$actual_row" ]]; then
-    echo "Pobrane dane zgadzają się z wysłanymi danymi."
+# Krok 3: Aktualizacja tabeli, dodanie nowej kolumny
+echo "Krok 3: Aktualizacja tabeli, dodanie nowej kolumny"
+update_table_response=$(curl -s -X PUT -H "Content-Type: application/json" -d "{\"fields\": $NEW_FIELD}" "$API_BASE_URL/table/$table_id")
+message=$(echo "$update_table_response" | jq -r '.message')
+
+# Sprawdzenie, czy odpowiedź zawiera komunikat o poprawnym dodaniu kolumny
+if [[ "$message" == "Table updated successfully" ]]; then
+    echo "Kolumna została dodana do tabeli dynamicznej poprawnie."
 else
-    echo "Błąd: pobrane dane nie zgadzają się z wysłanymi danymi."
-    echo "expected_row: $expected_row"
-    echo "actual_row: $actual_row"
-    echo "response_body: $response_body"
+    echo "Błąd podczas dodawania kolumny do tabeli dynamicznej. Odpowiedź serwera: $update_table_response"
     exit 1
 fi
+
+# Krok 4: Dodawanie wiersza do tabeli z nową kolumną
+echo "Krok 4: Dodawanie wiersza do tabeli z nową kolumną"
+add_row_with_new_column_response=$(curl -s -X POST -H "Content-Type: application/json" -d "$NEW_ROW_DATA" "$API_BASE_URL/table/$table_id/row")
+message=$(echo "$add_row_with_new_column_response" | jq -r '.message')
+
+# Sprawdzenie, czy odpowiedź zawiera komunikat o poprawnym dodaniu wiersza z nową kolumną
+if [[ "$message" == "Row added successfully" ]]; then
+    echo "Wiersz z nową kolumną został dodany do tabeli dynamicznej poprawnie."
+else
+    echo "Błąd podczas dodawania wiersza z nową kolumną do tabeli dynamicznej. Odpowiedź serwera: $add_row_with_new_column_response"
+    exit 1
+fi
+
+# Krok 5: Pobieranie wszystkich wierszy z tabeli
+echo "Krok 5: Pobieranie wszystkich wierszy z tabeli dynamicznej"
+get_rows_response=$(curl -s -X GET "$API_BASE_URL/table/$table_id/rows")
+rows_data=$(echo "$get_rows_response" | jq '.')
+
+# Wyświetlanie wierszy tabeli
+echo "Wiersze w tabeli dynamicznej:"
+echo "$rows_data"

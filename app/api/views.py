@@ -79,11 +79,11 @@ class UpdateTableView(APIView):
                 field_type = field["type"]
 
                 if field_type == "string":
-                    new_field = models.CharField(max_length=255)
+                    new_field = models.CharField(max_length=255, null=True, blank=True)
                 elif field_type == "number":
-                    new_field = models.IntegerField()
+                    new_field = models.IntegerField(null=True, blank=True)
                 elif field_type == "boolean":
-                    new_field = models.BooleanField()
+                    new_field = models.BooleanField(null=True, blank=True)
                 else:
                     return JsonResponse(
                         {"error": f"Unsupported field type: {field_type}"},
