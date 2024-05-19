@@ -6,7 +6,6 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 
-
 @pytest.fixture
 def api_client():
     return APIClient()
@@ -65,22 +64,13 @@ def test_update_dynamic_table(api_client):
     assert update_response.status_code == 200
     assert update_response.json()["message"] == "Table updated successfully"
 
-    # Log all tables in the schema
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
-        )
-        print(cursor.fetchall())
-
+    # Sprawdź, czy tabela została zaktualizowana
     with connection.cursor() as cursor:
         cursor.execute(
             f"SELECT column_name FROM information_schema.columns WHERE table_name = 'app_{table_id}'"
         )
-        print(cursor.fetchall())
-
-    # Sprawdź, czy tabela została zaktualizowana
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f"SELECT column_name FROM information_schema.columns WHERE table_name = 'app_{table_id}' AND column_name = 'field4'"
-        )
-        assert cursor.fetchone() is not None
+        columns = cursor.fetchall()
+        assert ("field1",) in columns
+        assert ("field2",) in columns
+        assert ("field3",) in columns
+        assert ("field4",) in columns

@@ -1,7 +1,7 @@
 import logging
 
 from django.apps import apps
-from django.db import connection, models
+from django.db import connection, models, utils
 from django.http import JsonResponse
 from rest_framework.views import APIView
 
@@ -54,44 +54,49 @@ class CreateTableView(APIView):
 
 class UpdateTableView(APIView):
     def put(self, request, id):
-        table_name = id
-        fields = request.data.get("fields")
+        table_name = f"app_{id}"
+        new_fields = request.data.get("fields", [])
 
-        if not fields:
-            return JsonResponse({"error": "Invalid input"}, status=400)
+        # Define a dynamic model class
+        DynamicModel = type(
+            "DynamicModel",
+            (models.Model,),
+            {
+                "__module__": "app.models",
+                "Meta": type("Meta", (object,), {"db_table": table_name}),
+            },
+        )
 
-        # Spróbuj pobrać dynamiczny model
-        try:
-            DynamicModel = apps.get_model("app", table_name.capitalize())
-        except LookupError:
-            return JsonResponse({"error": "Table not found"}, status=404)
+        # Connect to the database schema editor
+        with connection.schema_editor() as schema_editor:
+            for field in new_fields:
+                field_name = field["name"]
+                field_type = field["type"]
 
-        # Aktualizacja modelu
-        for field in fields:
-            field_name = field["name"]
-            field_type = field["type"]
+                if field_type == "string":
+                    new_field = models.CharField(max_length=255)
+                elif field_type == "number":
+                    new_field = models.IntegerField()
+                elif field_type == "boolean":
+                    new_field = models.BooleanField()
+                else:
+                    return JsonResponse(
+                        {"error": f"Unsupported field type: {field_type}"},
+                        status=400,
+                    )
 
-            if field_type == "string":
-                field_instance = models.CharField(max_length=255)
-            elif field_type == "number":
-                field_instance = models.IntegerField()
-            elif field_type == "boolean":
-                field_instance = models.BooleanField()
-            else:
-                return JsonResponse({"error": "Invalid field type"}, status=400)
+                # Set the field name
+                new_field.set_attributes_from_name(field_name)
 
-            field_instance.set_attributes_from_name(field_name)
-            DynamicModel.add_to_class(field_name, field_instance)
-
-        # Aktualizacja schematu bazy danych
-        try:
-            with connection.schema_editor() as schema_editor:
-                schema_editor.alter_db_table(DynamicModel, table_name, table_name)
-        except Exception as e:
-            logger.error(f"Table update failed: {e}")
-            return JsonResponse(
-                {"error": "Table update failed", "details": str(e)}, status=500
-            )
+                # Add the new field to the table
+                try:
+                    schema_editor.add_field(DynamicModel, new_field)
+                except utils.ProgrammingError as e:
+                    logger.error(f"Adding new field failed: {e}")
+                    return JsonResponse(
+                        {"error": "Adding new field failed", "details": str(e)},
+                        status=400,
+                    )
 
         return JsonResponse({"message": "Table updated successfully"}, status=200)
 
