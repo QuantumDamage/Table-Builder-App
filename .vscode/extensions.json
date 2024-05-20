@@ -1,0 +1,14 @@
+{
+    "recommendations": [
+        "esbenp.prettier-vscode",
+        "ms-pyright.pyright",
+        "timonwong.shellcheck",
+        "Bridgecrew.checkov",
+        "charliermarsh.ruff",
+        "matangover.mypy",
+        "streetsidesoftware.code-spell-checker",
+        "AquaSecurityOfficial.trivy-vulnerability-scanner",
+        "ms-python.python",
+        "foxundermoon.shell-format"
+    ]
+}
