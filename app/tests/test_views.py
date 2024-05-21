@@ -25,7 +25,7 @@ def test_create_dynamic_table(api_client):
     response = api_client.post(url, data, format="json")
     assert response.status_code == 201
 
-    # Uzyskaj dane odpowiedzi w formacie JSON
+    # Get JSON response
     response_data = json.loads(response.content)
     assert response_data["message"] == "Table created successfully"
     assert "table_id" in response_data
@@ -42,7 +42,7 @@ def test_create_dynamic_table(api_client):
 
 @pytest.mark.django_db
 def test_update_dynamic_table(api_client):
-    # Najpierw utwórz tabelę
+    # Create table
     create_url = reverse("create-table")
     create_data = {
         "name": "DynamicTable2",
@@ -57,14 +57,14 @@ def test_update_dynamic_table(api_client):
     create_response_data = json.loads(create_response.content)
     table_id = create_response_data["table_id"]
 
-    # Zaktualizuj tabelę
+    # Update table
     update_url = reverse("update-table", kwargs={"id": table_id})
     update_data = {"fields": [{"name": "field4", "type": "string"}]}
     update_response = api_client.put(update_url, update_data, format="json")
     assert update_response.status_code == 200
     assert update_response.json()["message"] == "Table updated successfully"
 
-    # Sprawdź, czy tabela została zaktualizowana
+    # Check update
     with connection.cursor() as cursor:
         cursor.execute(
             f"SELECT column_name FROM information_schema.columns WHERE table_name = 'app_{table_id}'"
