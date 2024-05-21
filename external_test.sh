@@ -72,3 +72,4 @@ post_request "$API_BASE_URL/table/$table_id/row" "$NEW_ROW_DATA" "Row added succ
 # Step 5: Get and display all rows in the table
 echo "Step 5: Getting all rows from the dynamic table"
 get_rows "$API_BASE_URL/table/$table_id/rows"
+echo "Done!"

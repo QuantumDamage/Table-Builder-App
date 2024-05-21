@@ -188,3 +188,33 @@ def test_update_table_add_column(api_client):
     assert rows_data[1]["field1"] == "New String"
     assert rows_data[1]["field2"] == 456
     assert rows_data[1]["field3"] is True
+
+    # Step 6: Update the table by adding a new column
+    update_url = reverse("update-table", kwargs={"id": table_id})
+    update_data = {
+        "fields": [
+            {"name": "field4", "type": "number"},
+        ]
+    }
+    update_response = api_client.put(update_url, update_data, format="json")
+    assert update_response.status_code == 200
+
+    # Step 7: Add a new row with the new column, bad type
+    row_data_with_new_column = {"field4": "789"}
+    add_row_response_with_new_column = api_client.post(add_row_url, row_data_with_new_column, format="json")
+    assert add_row_response_with_new_column.status_code == 400
+
+    # Step 8: Add a new row with the new column, good type
+    row_data_with_new_column = {"field4": 789}
+    add_row_response_with_new_column = api_client.post(add_row_url, row_data_with_new_column, format="json")
+    assert add_row_response_with_new_column.status_code == 201
+
+    get_rows_url = reverse("get-rows", kwargs={"id": table_id})
+    get_rows_response = api_client.get(get_rows_url)
+    assert get_rows_response.status_code == 200
+    rows_data = get_rows_response.json()
+    
+    assert len(rows_data) == 3
+    assert rows_data[2]["field3"] is None
+    assert rows_data[2]["field4"] == 789
+    

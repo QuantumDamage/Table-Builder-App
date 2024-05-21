@@ -1,14 +1,59 @@
 import logging
 
+import psycopg2
 from django.db import connection, models, transaction, utils
 from django.http import JsonResponse
-from rest_framework.views import APIView
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
+from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 
 
 class CreateTableView(APIView):
+    @swagger_auto_schema(
+        operation_description="Create a new dynamic table",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "name": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="Table name"
+                ),
+                "fields": openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Items(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            "name": openapi.Schema(
+                                type=openapi.TYPE_STRING, description="Field name"
+                            ),
+                            "type": openapi.Schema(
+                                type=openapi.TYPE_STRING,
+                                description="Field type",
+                                enum=["string", "number", "boolean"],
+                            ),
+                        },
+                        required=["name", "type"],
+                    ),
+                    description="List of fields to create in the table",
+                ),
+            },
+            required=["name", "fields"],
+            example={
+                "name": "DynamicTable_123",
+                "fields": [
+                    {"name": "field1", "type": "string"},
+                    {"name": "field2", "type": "number"},
+                ],
+            },
+        ),
+        responses={
+            201: "Table created successfully",
+            400: "Invalid input",
+            409: "Duplicate Table",
+        },
+    )
     def post(self, request):
         table_name = request.data.get("name")
         fields = request.data.get("fields")
@@ -18,18 +63,18 @@ class CreateTableView(APIView):
                 {"error": "Invalid input"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Tworzenie dynamicznego modelu
+        # Create dynamic model
         attrs = {"__module__": "app.models"}
         for field in fields:
             field_name = field["name"]
             field_type = field["type"]
 
             if field_type == "string":
-                field_instance = models.CharField(max_length=255)
+                field_instance = models.CharField(max_length=255, null=True, blank=True)
             elif field_type == "number":
-                field_instance = models.IntegerField()
+                field_instance = models.IntegerField(null=True, blank=True)
             elif field_type == "boolean":
-                field_instance = models.BooleanField()
+                field_instance = models.BooleanField(null=True, blank=True)
             else:
                 return JsonResponse(
                     {"error": "Invalid field type"}, status=status.HTTP_400_BAD_REQUEST
@@ -40,16 +85,22 @@ class CreateTableView(APIView):
         table_name = table_name.lower()  # Ensure the table name is in lowercase
         DynamicTable = type(table_name, (models.Model,), attrs)
 
-        # Rejestracja modelu w aplikacji
+        # Register model in the application
         try:
             with connection.schema_editor() as schema_editor:
                 schema_editor.create_model(DynamicTable)
-        except Exception as e:
-            logger.error(f"Table creation failed: {e}")
-            return JsonResponse(
-                {"error": "Table creation failed", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        except utils.ProgrammingError as e:
+            # Check if the error is a DuplicateTable error
+            if isinstance(e.__cause__, psycopg2.errors.DuplicateTable):
+                return JsonResponse(
+                    {"error": f"Duplicate Table: {e}"}, status=status.HTTP_409_CONFLICT
+                )
+            else:
+                logger.error(f"Table creation failed: {e}")
+                return JsonResponse(
+                    {"error": "Table creation failed", "details": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
         return JsonResponse(
             {"message": "Table created successfully", "table_id": table_name},
@@ -58,6 +109,42 @@ class CreateTableView(APIView):
 
 
 class UpdateTableView(APIView):
+    @swagger_auto_schema(
+        operation_description="Update the table by adding new columns",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "fields": openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            "name": openapi.Schema(
+                                type=openapi.TYPE_STRING, description="Field name"
+                            ),
+                            "type": openapi.Schema(
+                                type=openapi.TYPE_STRING,
+                                description="Field type",
+                                enum=["string", "number", "boolean"],
+                            ),
+                        },
+                        required=["name", "type"],
+                    ),
+                    description="List of new fields to add",
+                ),
+            },
+            required=["fields"],
+            example={
+                "fields": [
+                    {"name": "field3", "type": "boolean"},
+                ],
+            },
+        ),
+        responses={
+            200: "Table updated successfully",
+            400: "Invalid field type",
+        },
+    )
     def put(self, request, id):
         table_name = f"app_{id}"
         new_fields = request.data.get("fields", [])
@@ -109,6 +196,34 @@ class UpdateTableView(APIView):
 
 
 class AddRowView(APIView):
+    @swagger_auto_schema(
+        operation_description="Add a new row to the dynamic table",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "field1": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="Field 1"
+                ),
+                "field2": openapi.Schema(
+                    type=openapi.TYPE_INTEGER, description="Field 2"
+                ),
+                "field3": openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN, description="Field 3"
+                ),
+            },
+            required=["field1", "field2"],
+            example={
+                "field1": "New String",
+                "field2": 456,
+                "field3": True,
+            },
+        ),
+        responses={
+            201: "Row added successfully",
+            400: "Invalid input or adding row failed",
+            404: "Table not found",
+        },
+    )
     def post(self, request, id):
         table_name = f"app_{id}"
         data = request.data
@@ -129,16 +244,20 @@ class AddRowView(APIView):
                 f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}'"
             )
             columns = cursor.fetchall()
+            if not columns:
+                return JsonResponse(
+                    {"error": f"Table {id} not found"}, status=status.HTTP_404_NOT_FOUND
+                )
             for column in columns:
                 column_name, data_type = column
                 if column_name == "id":
                     field = models.AutoField(primary_key=True)
                 elif data_type == "character varying":
-                    field = models.CharField(max_length=255)
+                    field = models.CharField(max_length=255, null=True, blank=True)
                 elif data_type in ["integer", "bigint"]:
-                    field = models.IntegerField()
+                    field = models.IntegerField(null=True, blank=True)
                 elif data_type == "boolean":
-                    field = models.BooleanField()
+                    field = models.BooleanField(null=True, blank=True)
                 else:
                     return JsonResponse(
                         {"error": f"Unsupported column type: {data_type}"}, status=400
@@ -147,6 +266,31 @@ class AddRowView(APIView):
                     DynamicModel.add_to_class(column_name, field)
 
         # Validate and save the data
+        for field_name, field_value in data.items():
+            column_type = next(
+                (column[1] for column in columns if column[0] == field_name), None
+            )
+            if column_type == "integer" and not isinstance(field_value, int):
+                return JsonResponse(
+                    {
+                        "error": f"Invalid data type for field '{field_name}': expected integer"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if column_type == "character varying" and not isinstance(field_value, str):
+                return JsonResponse(
+                    {
+                        "error": f"Invalid data type for field '{field_name}': expected string"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if column_type == "boolean" and not isinstance(field_value, bool):
+                return JsonResponse(
+                    {
+                        "error": f"Invalid data type for field '{field_name}': expected boolean"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
             with transaction.atomic():
                 instance = DynamicModel(**data)
@@ -159,12 +303,19 @@ class AddRowView(APIView):
 
 
 class DynamicTableRowsView(APIView):
+    @swagger_auto_schema(
+        operation_description="Get all rows from the dynamic table",
+        responses={
+            200: "List of all rows in the dynamic table",
+            404: "Table not found",
+        },
+    )
     def get(self, request, id):
-        # Ustal dynamiczny model na podstawie id tabeli
+        # Determine the dynamic model based on the table id
         table_name = f"app_{id}"
 
         with connection.cursor() as cursor:
-            # Sprawdź, czy tabela istnieje
+            # Check if the table exists
             cursor.execute(
                 f"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='{table_name}'"
             )
@@ -173,17 +324,17 @@ class DynamicTableRowsView(APIView):
                     {"error": "Table not found"}, status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Pobierz wszystkie wiersze z tabeli
+            # Fetch all rows from the table
             cursor.execute(f"SELECT * FROM {table_name}")
             rows = cursor.fetchall()
 
-            # Pobierz nazwy kolumn
+            # Fetch column names
             cursor.execute(
                 f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}' ORDER BY ordinal_position"
             )
             columns = [col[0] for col in cursor.fetchall()]
 
-        # Przekształć wiersze na listę słowników
+        # Convert rows to a list of dictionaries
         results = [dict(zip(columns, row)) for row in rows]
 
         return JsonResponse(results, safe=False)
